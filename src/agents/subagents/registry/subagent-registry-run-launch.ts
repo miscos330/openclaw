@@ -220,7 +220,9 @@ export class SubagentLaunchManager extends SubagentRecoveryManager {
               settleFailedLaunch,
             }),
       );
-      authority = await captureOperatorToolGatewayContinuationContext();
+      authority = await captureOperatorToolGatewayContinuationContext(undefined, {
+        participationCeiling: registerParams.participationCeiling,
+      });
       const assertCurrent = () => {
         options.assertCurrent?.();
         authority?.assertCurrent();

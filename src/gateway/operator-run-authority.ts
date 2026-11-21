@@ -8,6 +8,7 @@ import {
 import { bindSharedGatewayOwnerRunAuthority } from "../agents/harness/host-private-capabilities.js";
 import {
   prepareOperatorModelPolicy,
+  intersectOperatorModelPolicy,
   readOperatorModelPolicyMembership,
   type PreparedOperatorModelPolicy,
 } from "../agents/operator-model-policy.js";
@@ -218,6 +219,7 @@ export type GatewayOperatorRunAdmissionInput = {
   }> | null;
   /** Additional request lifetime; never replaces the authenticated access grant. */
   invocationAuthority?: Readonly<{
+    participationAuthority?: AdmittedRunOperatorAuthority;
     assertCurrent: () => void;
     signal?: AbortSignal;
     release?: () => void;
@@ -519,6 +521,8 @@ export async function prepareGatewayOperatorRunAuthority(
         policy: capturedRole,
       }),
       source: source.token,
+      participationCeiling:
+        params.invocationAuthority?.participationAuthority?.participationCeiling,
       invocation: params.invocationAuthority,
       signal: params.invocationAuthority?.signal,
       retain: () => {
@@ -526,7 +530,7 @@ export async function prepareGatewayOperatorRunAuthority(
         references += 1;
         return releaseHold();
       },
-      modelPolicy,
+      modelPolicy: intersectOperatorModelPolicy(modelPolicy, params.invocationAuthority?.participationAuthority?.modelPolicy),
     });
     bindGatewayDeviceRevocation(authority.assertCurrent, params.hasCurrentClientAuthority);
     if (
