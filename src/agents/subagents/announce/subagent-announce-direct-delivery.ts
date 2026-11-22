@@ -6,6 +6,7 @@ import { getRuntimeConfig as getSubagentAnnounceRuntimeConfig } from "../../../c
 import { bindInProcessSessionRun } from "../../../gateway/in-process-session-run.js";
 import { resolveExternalBestEffortDeliveryTarget } from "../../../infra/outbound/best-effort-delivery.js";
 import { stringifyRouteThreadId } from "../../../plugin-sdk/channel-route.js";
+import { getPluginRuntimeGatewayRequestScope } from "../../../plugins/runtime/gateway-request-scope.js";
 import {
   INTERNAL_PROVENANCE_SOURCE_CHANNEL,
   isAgentMediatedCompletionSourceTool,
@@ -34,13 +35,10 @@ import {
   RUNTIME_EVENT_USER_PROMPT,
   projectRuntimeContextFragments,
 } from "../../internal-runtime-context.js";
-import { intersectParticipationCeilings } from "../../participation-ceiling.js";
 import {
   resolveCommandReplyExpectation,
   resolveCompletionInputReplyExpectation,
 } from "../../reply-completion.js";
-import { resolveSubagentCompletionParticipation } from "../registry/subagent-child-owner-match.js";
-import { getSubagentRunsForChildSession } from "../registry/subagent-registry-memory.js";
 import {
   deliverCompletionDirect,
   isDirectMessageDeliveryTarget,
@@ -133,21 +131,12 @@ async function sendSubagentAnnounceDirectlyBound(
     );
     const requesterEntry = requester.entry;
     const requesterAgentId = requester.agentId;
-    const completionKeys =
-      params.settleWakeSourceSessionKeys ??
-      (params.sourceSessionKey ? [params.sourceSessionKey] : []);
-    const ceilings = await Promise.all(
-      completionKeys.map(async (key) =>
-        resolveSubagentCompletionParticipation(
-          getSubagentRunsForChildSession(key, requesterAgentId),
-          (await loadRequesterSessionEntry(key, requesterAgentId)).entry,
-        ),
-      ),
-    );
-    if (ceilings.some(Boolean) && ceilings.some((ceiling) => !ceiling)) {
-      throw new Error("Participant completions require a separate requester turn.");
+    const operatorAuthority =
+      getPluginRuntimeGatewayRequestScope()?.client?.internal?.operatorRunAuthority;
+    const participating = operatorAuthority?.participationCeiling !== undefined;
+    if (participating) {
+      operatorAuthority.assertCurrent();
     }
-    const participationCeiling = ceilings.reduce(intersectParticipationCeilings, undefined);
     const requesterSessionId = requesterEntry?.sessionId;
     const requesterLifecycleRevision = requesterEntry?.lifecycleRevision;
     const deliveryTarget =
@@ -278,7 +267,7 @@ async function sendSubagentAnnounceDirectlyBound(
         ? "message_tool_only"
         : undefined;
     const shouldDeliverAgentFinal =
-      !participationCeiling && deliveryTarget.deliver && !requiresMessageToolDelivery;
+      !participating && deliveryTarget.deliver && !requiresMessageToolDelivery;
     const requesterQueueSettings = resolveQueueSettings({
       cfg,
       channel:
@@ -290,7 +279,7 @@ async function sendSubagentAnnounceDirectlyBound(
     // A public completion steers once into the requester's running turn. Ordinary
     // rejection leaves its input queued for the dispatch below.
     if (
-      !participationCeiling &&
+      !participating &&
       !parentOnly &&
       !params.requireDirectDelivery &&
       params.expectsCompletionMessage &&
@@ -455,7 +444,6 @@ async function sendSubagentAnnounceDirectlyBound(
         sessionId: boundRequesterSessionId,
         lifecycleRevision: requesterLifecycleRevision ?? null,
         runId: params.directIdempotencyKey,
-        participationCeiling,
       });
     }
     const classifyResponse = createDirectAnnounceResponseClassifier({
@@ -513,7 +501,6 @@ async function sendSubagentAnnounceDirectlyBound(
           params.isSourceSessionEffectsAllowed?.() !== false
             ? {
                 sourceSessionKey: params.sourceSessionKey,
-                participationCeiling,
                 ...(trustedCompletionEvent?.childSessionId
                   ? { sourceSessionId: trustedCompletionEvent.childSessionId }
                   : {}),

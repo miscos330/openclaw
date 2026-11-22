@@ -481,7 +481,9 @@ export async function prepareGatewayOperatorRunAuthority(
       scopes,
       gatewayAccessGrant: grant ? Object.freeze({ ...grant }) : grant,
       assertCurrent,
-      participationCeiling: params.invocationAuthority?.participationCeiling,
+      participationCeiling: params.invocationAuthority?.participationAuthority
+        ? undefined
+        : params.invocationAuthority?.participationCeiling,
     };
     const {
       snapshot: recoverySnapshot,
@@ -546,7 +548,12 @@ export async function prepareGatewayOperatorRunAuthority(
       // reconnects bound to that shared credential. The profile name grants nothing.
       bindSharedGatewayOwnerRunAuthority(authority);
     }
-    return { authority, release };
+    return params.invocationAuthority?.participationAuthority
+      ? retainGatewayOperatorInvocation(
+          { authority, release },
+          { ...params.invocationAuthority, release: undefined },
+        )
+      : { authority, release };
   } catch (error) {
     release();
     throw error;

@@ -4,10 +4,10 @@ import { GatewayClientRequestError } from "../../../../packages/gateway-client/s
 import { awaitGateBeforeSettlement, withinTest } from "../../../../test/helpers/promise.js";
 import type { SessionEntry } from "../../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import { readInProcessParticipationRun } from "../../../gateway/in-process-session-run.js";
 import { createLifecycleTypingManager } from "../../../gateway/lifecycle-typing.js";
 import { registerGatewayLifecycleRuntime } from "../../../gateway/server-lifecycle-runtime-context.js";
 import type { dispatchGatewayMethodInProcess } from "../../../gateway/server-plugin-in-process-dispatch.js";
+import { createSyntheticPluginRuntimeClient } from "../../../gateway/server-plugin-runtime-client.js";
 import type { sendMessage } from "../../../infra/outbound/message.js";
 import { createOwnedTestInstance } from "../../../plugins/plugin-instance.test-support.js";
 import { PluginInvocationScope } from "../../../plugins/plugin-invocation-scope.js";
@@ -16,7 +16,11 @@ import {
   restoreActivePluginRegistrySnapshot,
   setActivePluginRegistry,
 } from "../../../plugins/runtime.js";
-import { getPluginRegistryForContext } from "../../../plugins/runtime/gateway-request-scope.js";
+import {
+  getPluginRegistryForContext,
+  getPluginRuntimeGatewayRequestScope,
+  withPluginRuntimeGatewayRequestScope,
+} from "../../../plugins/runtime/gateway-request-scope.js";
 import { withSessionTurn } from "../../../sessions/session-controller.admission.js";
 import type { ReplyBackendMessageInjectionV2 } from "../../../sessions/session-controller.contracts.js";
 import { captureSessionTarget } from "../../../sessions/session-controller.lifecycle.js";
@@ -28,6 +32,10 @@ import {
 } from "../../../sessions/session-controller.mailbox.js";
 import { createReplyOperation } from "../../../sessions/session-controller.operation.js";
 import { createDeferredCore } from "../../../shared/deferred.js";
+import {
+  createAdmittedRunOperatorAuthority,
+  type AdmittedRunOperatorAuthority,
+} from "../../admitted-run-context.js";
 import * as embeddedRuns from "../../embedded-agent-runner/runs.js";
 import { createAgentRunRestartAbortError } from "../../run-termination.js";
 import { taskCompletionEvents } from "../../subagent-test-fixtures.test-helpers.js";
@@ -77,9 +85,12 @@ function setup(sourceTool = "subagent_settle") {
     incarnation: initialEntry.sessionId,
   });
   let executionStarted: (() => unknown) | undefined;
+  let dispatchedAuthority: AdmittedRunOperatorAuthority | undefined;
   const dispatch = vi.fn(async function <T>(
     ...args: Parameters<typeof dispatchGatewayMethodInProcess>
   ) {
+    dispatchedAuthority =
+      getPluginRuntimeGatewayRequestScope()?.client?.internal?.operatorRunAuthority;
     executionStarted = args[2]?.onExecutionStarted;
     args[2]?.onAccepted?.({ status: "accepted" });
     dispatchEntered.resolve();
@@ -127,6 +138,9 @@ function setup(sourceTool = "subagent_settle") {
     signal: controller.signal,
   };
   return {
+    get dispatchedAuthority() {
+      return dispatchedAuthority;
+    },
     target,
     startDelivery: () => (ownedDelivery = deliverSubagentAnnouncement(params)),
     state,
@@ -471,25 +485,34 @@ it("queues participant completion as a capped new turn instead of steering an ac
       root: "/synthetic/root",
     },
   };
-  fixture.state.childEntry = {
-    sessionId: "child-id",
-    updatedAt: 1,
-    spawnedBy: sessionKey,
-    inheritedToolPolicySource: "participant",
-    participationCeiling: ceiling,
-  };
-  const { queueMessage, input } = steering(fixture, async () => {});
-  fixture.dispatchDone.resolve(response([{ text: "Private participant result" }]));
-  await deliverSubagentAnnouncement({
-    ...fixture.params,
-    controllerInput: input,
-    sourceSessionKey: "agent:main:subagent:participant-child",
+  const operatorAuthority = createAdmittedRunOperatorAuthority({
+    profileId: ceiling.profileId,
+    scopes: ["operator.write"],
+    participationCeiling: { ...ceiling, permission: "guarded" },
+    assertCurrent() {},
   });
-  expect(queueMessage).not.toHaveBeenCalled();
+  await withPluginRuntimeGatewayRequestScope(
+    {
+      client: createSyntheticPluginRuntimeClient({
+        operatorRunAuthority: operatorAuthority,
+        scopes: ["operator.write"],
+      }),
+      isWebchatConnect: () => false,
+    },
+    async () => {
+      const { queueMessage, input } = steering(fixture, async () => {});
+      fixture.dispatchDone.resolve(response([{ text: "Private participant result" }]));
+      await deliverSubagentAnnouncement({
+        ...fixture.params,
+        controllerInput: input,
+        sourceSessionKey: "agent:main:subagent:participant-child",
+      });
+      expect(queueMessage).not.toHaveBeenCalled();
+    },
+  );
   expect(fixture.dispatch).toHaveBeenCalledTimes(1);
-  const request = fixture.dispatch.mock.calls[0]![1];
-  expect(readInProcessParticipationRun("agent", request)).toEqual(ceiling);
-  expect(request).toMatchObject({ deliver: false });
+  expect(fixture.dispatchedAuthority).toBe(operatorAuthority);
+  expect(fixture.dispatch.mock.calls[0]![1]).toMatchObject({ deliver: false });
 });
 
 it("reports no attempted completion phase when cancelled before dispatch", async () => {

@@ -389,7 +389,7 @@ export function normalizeChatSendRequest(params: {
     ...(mentions.value ? { mentions: mentions.value } : {}),
     reconnectResumeRequested: controlUiReconnectResume.resumeRequested,
   };
-  if (recoveredInput?.participationCeiling) {
+  if (recoveredInput?.operatorAuthority?.participationCeiling) {
     const attached = applyChatSendParticipation(value);
     if (!attached.ok) {
       return attached;
