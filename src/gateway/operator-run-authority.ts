@@ -220,6 +220,7 @@ export type GatewayOperatorRunAdmissionInput = {
   /** Additional request lifetime; never replaces the authenticated access grant. */
   invocationAuthority?: Readonly<{
     participationAuthority?: AdmittedRunOperatorAuthority;
+    participationCeiling?: import("../agents/participation-ceiling.js").BoundParticipationCeiling;
     assertCurrent: () => void;
     signal?: AbortSignal;
     release?: () => void;
@@ -480,6 +481,7 @@ export async function prepareGatewayOperatorRunAuthority(
       scopes,
       gatewayAccessGrant: grant ? Object.freeze({ ...grant }) : grant,
       assertCurrent,
+      participationCeiling: params.invocationAuthority?.participationCeiling,
     };
     const {
       snapshot: recoverySnapshot,
@@ -521,8 +523,7 @@ export async function prepareGatewayOperatorRunAuthority(
         policy: capturedRole,
       }),
       source: source.token,
-      participationCeiling:
-        params.invocationAuthority?.participationAuthority?.participationCeiling,
+      participationCeiling: admission.participationCeiling,
       invocation: params.invocationAuthority,
       signal: params.invocationAuthority?.signal,
       retain: () => {

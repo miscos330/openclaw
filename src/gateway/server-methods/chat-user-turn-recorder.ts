@@ -333,10 +333,7 @@ export function createGatewayChatUserTurnController(params: {
                 }
               : {}),
             ...(request.requestIdentity ? { chatRequestIdentity: request.requestIdentity } : {}),
-            ...(request.participationCeiling
-              ? { participationCeiling: request.participationCeiling }
-              : {}),
-            ...(request.suppressCommandInterpretation || request.participationCeiling
+            ...(request.suppressCommandInterpretation || request.participating
               ? { suppressCommandInterpretation: true }
               : {}),
             ...(request.p.deliver !== undefined || request.explicitOrigin
