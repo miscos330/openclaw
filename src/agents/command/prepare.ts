@@ -351,7 +351,6 @@ export async function prepareAgentCommandExecution(
       cfg,
       agentId: sessionAgentId,
       defaultProvider: DEFAULT_PROVIDER,
-      defaultModel: DEFAULT_MODEL,
       allowPluginNormalization: pluginsEnabled,
       ...modelManifestContext,
     });
@@ -360,14 +359,16 @@ export async function prepareAgentCommandExecution(
       workspaceDir,
       ...modelManifestContext,
     });
-    const configuredThinkingRuntime = resolveEffectiveAgentRuntime({
-      cfg,
-      provider: configuredModel.provider,
-      modelId: configuredModel.model,
-      agentId: sessionAgentId,
-      sessionKey,
-      sessionEntry: sessionEntryRaw,
-    });
+    const configuredThinkingRuntime =
+      configuredModel &&
+      resolveEffectiveAgentRuntime({
+        cfg,
+        provider: configuredModel.provider,
+        modelId: configuredModel.model,
+        agentId: sessionAgentId,
+        sessionKey,
+        sessionEntry: sessionEntryRaw,
+      });
     const sessionStableReplyMode = await resolveSessionStableReplyMode({
       cfg,
       metadataSnapshot: manifestMetadataSnapshot,
@@ -395,14 +396,15 @@ export async function prepareAgentCommandExecution(
     // Built only for the error, since it loads the selected model's bundled row.
     const formatThinkingLevelsHint = () =>
       formatThinkingLevels(
-        configuredModel.provider,
-        configuredModel.model,
+        configuredModel?.provider,
+        configuredModel?.model,
         ", ",
-        buildThinkingCatalog({
-          cfg,
-          provider: configuredModel.provider,
-          model: configuredModel.model,
-        }),
+        configuredModel &&
+          buildThinkingCatalog({
+            cfg,
+            provider: configuredModel.provider,
+            model: configuredModel.model,
+          }),
         configuredThinkingRuntime,
       );
     const thinkOverride = normalizeThinkLevel(opts.thinking);
