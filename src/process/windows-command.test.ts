@@ -83,6 +83,19 @@ windowsIt("preserves trailing cwd whitespace for relative PATH", async ({ cwd })
   );
 });
 
+windowsIt(
+  "keeps a semicolon in the child cwd for relative PATH and explicit paths",
+  async ({ cwd }) => {
+    const childCwd = path.join(cwd, "project;literal");
+    await mkdir(path.join(childCwd, "bin"), { recursive: true });
+    const tool = path.join(childCwd, "bin", "tool.exe");
+    await writeFile(tool, "");
+    const env = { PATH: "bin", PATHEXT: ".EXE" };
+    expect(resolveCommand(["tool"], env, childCwd).command).toBe(tool);
+    expect(resolveCommand(["./bin/tool"], env, childCwd).command).toBe(tool);
+  },
+);
+
 windowsIt("uses process cwd for blank cwd and relative PATH", ({ cwd }) => {
   using cwdSpy = vi.spyOn(process, "cwd");
   cwdSpy.mockReturnValue(cwd);

@@ -67,9 +67,11 @@ function resolveWindowsCommandFromCwdOrPath(params: {
     if (path.extname(candidate)) {
       return isRegularFile(candidate) ? candidate : undefined;
     }
+    // Directories go in as a list: a Windows directory name may contain ";",
+    // which a PATH string would split.
     return resolveExecutableFromPathEnv(
       path.basename(candidate),
-      path.dirname(candidate),
+      [path.dirname(candidate)],
       params.env,
       { includeExtensionless: false },
     );
@@ -86,7 +88,7 @@ function resolveWindowsCommandFromCwdOrPath(params: {
     .map((entry) => (path.isAbsolute(entry) ? entry : path.resolve(cwd, entry)));
   // Bare names search PATH only. Requiring an explicit relative path prevents
   // an untrusted child cwd from shadowing installed tools such as git or node.
-  return resolveExecutableFromPathEnv(params.command, pathEntries.join(";"), params.env, {
+  return resolveExecutableFromPathEnv(params.command, pathEntries, params.env, {
     includeExtensionless: false,
   });
 }
